@@ -9,6 +9,7 @@ This tool reads your list, searches each song on Spotify, creates a playlist on 
 ## Files
 
 - `create_spotify_playlist.py`: the playlist creation script
+- `spotify_playlist_creator_gui.py`: desktop GUI version with file upload + credential fields
 - `example_songs.txt`: a ready-to-use sample input file in the correct format
 
 ## Requirements
@@ -75,6 +76,21 @@ Fantasy (ft. COBRAH) | Demi | Lovato         # more than one separator
 ```
 
 ## Run
+
+GUI version (recommended for easiest use):
+
+```bash
+/usr/bin/python3 spotify_playlist_creator_gui.py
+```
+
+GUI features:
+
+- Browse and upload a `.txt` song list file
+- Input fields for Client ID and Client Secret
+- `Show Secret` toggle for easier credential entry
+- `Save Client ID` checkbox to remember Client ID locally for next launch
+
+CLI version:
 
 ```bash
 /usr/bin/python3 create_spotify_playlist.py \
