@@ -9,6 +9,7 @@ This tool reads your list, searches each song on Spotify, creates a playlist on 
 ## Files
 
 - `create_spotify_playlist.py`: the playlist creation script
+- `example_songs.txt`: a ready-to-use sample input file in the correct format
 
 ## Requirements
 
@@ -56,6 +57,12 @@ Song Name | Artist 1, Artist 2
 Fantasy (ft. COBRAH) | Demi Lovato, COBRAH
 Window | Foo Fighters
 Shoulda Never (feat. USHER) | USHER, Kehlani
+```
+
+You can also use the included sample file directly:
+
+```bash
+/usr/bin/python3 create_spotify_playlist.py --input example_songs.txt
 ```
 
 ### Invalid examples
