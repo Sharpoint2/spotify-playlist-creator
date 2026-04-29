@@ -16,12 +16,19 @@ This tool reads your list, searches each song on Spotify, creates a playlist on 
 
 - Python 3.9+
 - `requests` Python package
+- `tkinter` (required for the GUI)
 - A Spotify Developer app (free)
 
 If needed:
 
 ```bash
 pip install requests
+```
+
+On Linux, `tkinter` is not bundled with Python and must be installed separately:
+
+```bash
+sudo apt-get install python3-tk
 ```
 
 ## Spotify App Setup (Required)
