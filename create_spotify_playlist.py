@@ -24,9 +24,10 @@ import base64
 import os
 import re
 import socket
+import subprocess
 import sys
 import time
-from urllib.parse import urlparse, urlencode
+from urllib.parse import parse_qs, urlparse, urlencode
 import webbrowser
 from pathlib import Path
 from threading import Event, Thread
@@ -71,14 +72,31 @@ def _wait_for_auth_code(
     code_holder: list[str] = []
     ready = Event()
 
+    def _normalize_path(path: str) -> str:
+        normalized = path.rstrip("/")
+        return normalized if normalized else "/"
+
+    expected_path = _normalize_path(callback_path)
+
     def handler(conn: socket.socket) -> None:
         data = conn.recv(4096).decode("utf-8", errors="replace")
-        match = re.search(
-            rf"GET {re.escape(callback_path)}\?.*?code=([^& ]+)",
-            data,
-        )
-        if match:
-            code_holder.append(match.group(1))
+        request_line = data.splitlines()[0] if data else ""
+        target_match = re.match(r"^GET\s+(\S+)\s+HTTP/", request_line)
+
+        code = ""
+        if target_match:
+            target = target_match.group(1)
+            parsed_target = urlparse(target)
+            request_path = parsed_target.path if parsed_target.scheme else target.split("?", 1)[0]
+            request_query = parsed_target.query if parsed_target.scheme else (target.split("?", 1)[1] if "?" in target else "")
+
+            if _normalize_path(request_path) == expected_path:
+                code_values = parse_qs(request_query).get("code", [])
+                if code_values:
+                    code = code_values[0]
+
+        if code:
+            code_holder.append(code)
             response = (
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                 "<html><body><h2>Authorization complete — you can close this tab.</h2></body></html>"
@@ -93,9 +111,9 @@ def _wait_for_auth_code(
     server = socket.socket(family, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if family == socket.AF_INET6:
-        server.bind((host, port, 0, 0))
+        server.bind(("::", port, 0, 0))
     else:
-        server.bind((host, port))
+        server.bind(("0.0.0.0", port))
     server.listen(1)
     server.settimeout(timeout)
 
@@ -130,17 +148,44 @@ def authorize(client_id: str, client_secret: str, redirect_uri: str) -> str:
     }
     auth_url = f"{SPOTIFY_AUTH_URL}?{urlencode(params)}"
 
+    def try_open_browser(url: str) -> str | None:
+        try:
+            if webbrowser.open(url, new=2):
+                return "webbrowser"
+        except Exception:
+            pass
+
+        launch_commands = [
+            ["xdg-open", url],
+            ["gio", "open", url],
+            ["sensible-browser", url],
+            ["wslview", url],
+            ["cmd.exe", "/c", "start", "", url],
+            ["powershell.exe", "-NoProfile", "-Command", "Start-Process", url],
+        ]
+
+        for command in launch_commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    return " ".join(command[:2])
+            except (FileNotFoundError, subprocess.SubprocessError):
+                continue
+
+        return None
+
     print(f"\nSpotify authorization URL:\n{auth_url}\n")
     print("Attempting to open your browser automatically...")
 
-    opened = False
-    try:
-        opened = bool(webbrowser.open(auth_url, new=2))
-    except Exception:
-        opened = False
-
-    if opened:
-        print("Browser opened. Approve access, then return here.\n")
+    launcher = try_open_browser(auth_url)
+    if launcher:
+        print(f"Browser opened via {launcher}. Approve access, then return here.\n")
     else:
         print(
             "Could not auto-open a browser in this environment.\n"
