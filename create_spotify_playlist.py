@@ -4,7 +4,7 @@
 SETUP:
 1. Go to https://developer.spotify.com/dashboard and create an app.
 2. In the app settings, add this Redirect URI exactly:
-       http://localhost:8888/callback
+    http://127.0.0.1:8888/callback
 3. Copy your Client ID and Client Secret.
 4. Pass them via --client-id / --client-secret, or set env vars:
        SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import argparse
 import base64
-import json
 import os
 import re
 import socket
 import sys
 import time
-import urllib.parse
+from urllib.parse import urlparse, urlencode
 import webbrowser
 from pathlib import Path
 from threading import Event, Thread
@@ -37,7 +36,7 @@ import requests
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
-REDIRECT_URI = "http://localhost:8888/callback"
+DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = "playlist-modify-public playlist-modify-private"
 
 # Number of tracks per API add-to-playlist call (Spotify maximum is 100)
@@ -48,14 +47,36 @@ BATCH_SIZE = 100
 # OAuth
 # ---------------------------------------------------------------------------
 
-def _wait_for_auth_code(port: int = 8888, timeout: int = 120) -> str:
+def _parse_redirect_uri(redirect_uri: str) -> tuple[str, int, str]:
+    parsed = urlparse(redirect_uri)
+    host = parsed.hostname or ""
+    port = parsed.port or 80
+    path = parsed.path or "/"
+
+    if parsed.scheme != "http":
+        raise ValueError("Redirect URI must use http.")
+    if host not in {"127.0.0.1", "::1"}:
+        raise ValueError("Redirect URI host must be 127.0.0.1 or ::1 (Spotify does not allow localhost).")
+
+    return host, port, path
+
+
+def _wait_for_auth_code(
+    host: str,
+    port: int,
+    callback_path: str,
+    timeout: int = 120,
+) -> str:
     """Start a one-shot local HTTP server to capture the OAuth callback code."""
     code_holder: list[str] = []
     ready = Event()
 
     def handler(conn: socket.socket) -> None:
         data = conn.recv(4096).decode("utf-8", errors="replace")
-        match = re.search(r"GET /callback\?.*?code=([^& ]+)", data)
+        match = re.search(
+            rf"GET {re.escape(callback_path)}\?.*?code=([^& ]+)",
+            data,
+        )
         if match:
             code_holder.append(match.group(1))
             response = (
@@ -68,9 +89,13 @@ def _wait_for_auth_code(port: int = 8888, timeout: int = 120) -> str:
         conn.close()
         ready.set()
 
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    family = socket.AF_INET6 if host == "::1" else socket.AF_INET
+    server = socket.socket(family, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("127.0.0.1", port))
+    if family == socket.AF_INET6:
+        server.bind((host, port, 0, 0))
+    else:
+        server.bind((host, port))
     server.listen(1)
     server.settimeout(timeout)
 
@@ -93,20 +118,37 @@ def _wait_for_auth_code(port: int = 8888, timeout: int = 120) -> str:
     return code_holder[0]
 
 
-def authorize(client_id: str, client_secret: str) -> str:
+def authorize(client_id: str, client_secret: str, redirect_uri: str) -> str:
     """Run the OAuth Authorization Code flow and return a valid access token."""
+    host, port, callback_path = _parse_redirect_uri(redirect_uri)
+
     params = {
         "client_id": client_id,
         "response_type": "code",
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "scope": SCOPES,
     }
-    auth_url = f"{SPOTIFY_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    auth_url = f"{SPOTIFY_AUTH_URL}?{urlencode(params)}"
 
-    print(f"\nOpening Spotify authorization in your browser...\n{auth_url}\n")
-    webbrowser.open(auth_url)
+    print(f"\nSpotify authorization URL:\n{auth_url}\n")
+    print("Attempting to open your browser automatically...")
 
-    code = _wait_for_auth_code()
+    opened = False
+    try:
+        opened = bool(webbrowser.open(auth_url, new=2))
+    except Exception:
+        opened = False
+
+    if opened:
+        print("Browser opened. Approve access, then return here.\n")
+    else:
+        print(
+            "Could not auto-open a browser in this environment.\n"
+            "Please copy the URL above into any browser, approve access,\n"
+            "then return here so the app can capture the callback.\n"
+        )
+
+    code = _wait_for_auth_code(host=host, port=port, callback_path=callback_path)
 
     credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     response = requests.post(
@@ -118,7 +160,7 @@ def authorize(client_id: str, client_secret: str) -> str:
         data={
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_uri,
         },
         timeout=15,
     )
@@ -219,6 +261,7 @@ def run(
     playlist_name: str,
     client_id: str,
     client_secret: str,
+    redirect_uri: str,
     delay: float,
 ) -> int:
     entries = parse_names_only_file(input_file)
@@ -228,7 +271,7 @@ def run(
 
     print(f"Loaded {len(entries)} entries from {input_file}")
 
-    token = authorize(client_id, client_secret)
+    token = authorize(client_id, client_secret, redirect_uri)
     user_id = get_current_user_id(token)
     print(f"Authenticated as Spotify user: {user_id}")
 
@@ -302,6 +345,14 @@ def parse_args() -> argparse.Namespace:
         help="Spotify app Client Secret (or set SPOTIFY_CLIENT_SECRET env var)",
     )
     parser.add_argument(
+        "--redirect-uri",
+        default=os.environ.get("SPOTIFY_REDIRECT_URI", DEFAULT_REDIRECT_URI),
+        help=(
+            "Spotify app Redirect URI (must exactly match your app settings). "
+            f"Default: {DEFAULT_REDIRECT_URI}"
+        ),
+    )
+    parser.add_argument(
         "--delay",
         type=float,
         default=0.05,
@@ -317,7 +368,8 @@ def main() -> int:
         print(
             "Error: --client-id and --client-secret are required.\n"
             "Create a Spotify app at https://developer.spotify.com/dashboard\n"
-            "and add http://localhost:8888/callback as a Redirect URI.",
+            "and add your exact redirect URI in app settings.\n"
+            "Use --redirect-uri to match that value.",
             file=sys.stderr,
         )
         return 1
@@ -333,11 +385,15 @@ def main() -> int:
             playlist_name=args.playlist_name,
             client_id=args.client_id,
             client_secret=args.client_secret,
+            redirect_uri=args.redirect_uri,
             delay=args.delay,
         )
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         return 130
+    except ValueError as exc:
+        print(f"Redirect URI error: {exc}", file=sys.stderr)
+        return 1
     except requests.HTTPError as exc:
         print(f"Spotify API error: {exc}", file=sys.stderr)
         return 1

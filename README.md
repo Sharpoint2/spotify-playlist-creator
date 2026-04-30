@@ -38,8 +38,12 @@ sudo apt-get install python3-tk
 3. In app Settings, add this Redirect URI exactly:
 
 ```text
-http://localhost:8888/callback
+http://127.0.0.1:8888/callback
 ```
+
+Important: Spotify requires an exact match, including protocol, host, port, path, and trailing slash behavior.
+Spotify no longer accepts `localhost` as a redirect host. Use loopback IP literals like `127.0.0.1` (or `::1`).
+If your app uses a different redirect URI, use that exact same value in this tool.
 
 4. Copy your Client ID and Client Secret
 
@@ -94,6 +98,7 @@ GUI features:
 
 - Browse and upload a `.txt` song list file
 - Input fields for Client ID and Client Secret
+- Input field for Redirect URI (must exactly match Spotify app settings)
 - `Show Secret` toggle for easier credential entry
 - `Save Client ID` checkbox to remember Client ID locally for next launch
 
@@ -104,7 +109,8 @@ CLI version:
   --input songs.txt \
   --playlist-name "My Imported Playlist" \
   --client-id YOUR_CLIENT_ID \
-  --client-secret YOUR_CLIENT_SECRET
+  --client-secret YOUR_CLIENT_SECRET \
+  --redirect-uri http://127.0.0.1:8888/callback
 ```
 
 Or use environment variables:
@@ -112,6 +118,7 @@ Or use environment variables:
 ```bash
 export SPOTIFY_CLIENT_ID=your_client_id
 export SPOTIFY_CLIENT_SECRET=your_client_secret
+export SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 /usr/bin/python3 create_spotify_playlist.py --input songs.txt
 ```
 
@@ -121,6 +128,7 @@ export SPOTIFY_CLIENT_SECRET=your_client_secret
 - `--playlist-name`: Name of playlist to create
 - `--client-id`: Spotify Client ID (or `SPOTIFY_CLIENT_ID` env var)
 - `--client-secret`: Spotify Client Secret (or `SPOTIFY_CLIENT_SECRET` env var)
+- `--redirect-uri`: Redirect URI matching Spotify app settings exactly (or `SPOTIFY_REDIRECT_URI` env var)
 - `--delay`: Delay between Spotify search requests (default: `0.05`)
 
 ## Output

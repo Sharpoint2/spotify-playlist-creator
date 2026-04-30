@@ -34,6 +34,7 @@ class PlaylistCreatorGUI:
         self.playlist_name_var = tk.StringVar(value="My Imported Playlist")
         self.client_id_var = tk.StringVar(value="")
         self.client_secret_var = tk.StringVar(value="")
+        self.redirect_uri_var = tk.StringVar(value="http://127.0.0.1:8888/callback")
         self.delay_var = tk.StringVar(value="0.05")
         self.show_secret_var = tk.BooleanVar(value=False)
         self.save_client_id_var = tk.BooleanVar(value=False)
@@ -46,20 +47,25 @@ class PlaylistCreatorGUI:
         self._start_log_poller()
 
     def _build_ui(self) -> None:
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+
         main = ttk.Frame(self.root, padding=12)
-        main.pack(fill=tk.BOTH, expand=True)
+        main.grid(row=0, column=0, sticky="nsew")
+        main.columnconfigure(0, weight=1)
+        main.rowconfigure(5, weight=1)
 
         title = ttk.Label(main, text="Spotify Playlist Creator", font=("TkDefaultFont", 14, "bold"))
-        title.pack(anchor="w")
+        title.grid(row=0, column=0, sticky="w")
 
         subtitle = ttk.Label(
             main,
             text="Upload a song list file and enter your Spotify app credentials.",
         )
-        subtitle.pack(anchor="w", pady=(2, 10))
+        subtitle.grid(row=1, column=0, sticky="w", pady=(2, 10))
 
         form = ttk.Frame(main)
-        form.pack(fill=tk.X)
+        form.grid(row=2, column=0, sticky="ew")
 
         form.columnconfigure(1, weight=1)
 
@@ -77,8 +83,11 @@ class PlaylistCreatorGUI:
         self.client_secret_entry = ttk.Entry(form, textvariable=self.client_secret_var, show="*")
         self.client_secret_entry.grid(row=3, column=1, columnspan=2, sticky="ew", pady=5)
 
+        ttk.Label(form, text="Redirect URI:").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=5)
+        ttk.Entry(form, textvariable=self.redirect_uri_var).grid(row=4, column=1, columnspan=2, sticky="ew", pady=5)
+
         options_row = ttk.Frame(form)
-        options_row.grid(row=4, column=1, columnspan=2, sticky="w", pady=(0, 3))
+        options_row.grid(row=5, column=1, columnspan=2, sticky="w", pady=(0, 3))
         ttk.Checkbutton(
             options_row,
             text="Show Secret",
@@ -91,11 +100,11 @@ class PlaylistCreatorGUI:
             variable=self.save_client_id_var,
         ).pack(side=tk.LEFT, padx=(14, 0))
 
-        ttk.Label(form, text="Delay (seconds):").grid(row=5, column=0, sticky="w", padx=(0, 8), pady=5)
-        ttk.Entry(form, textvariable=self.delay_var).grid(row=5, column=1, columnspan=2, sticky="ew", pady=5)
+        ttk.Label(form, text="Delay (seconds):").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=5)
+        ttk.Entry(form, textvariable=self.delay_var).grid(row=6, column=1, columnspan=2, sticky="ew", pady=5)
 
         buttons = ttk.Frame(main)
-        buttons.pack(fill=tk.X, pady=(10, 8))
+        buttons.grid(row=3, column=0, sticky="ew", pady=(10, 8))
 
         self.run_btn = ttk.Button(buttons, text="Create Playlist", command=self._run)
         self.run_btn.pack(side=tk.LEFT)
@@ -105,14 +114,19 @@ class PlaylistCreatorGUI:
 
         ttk.Button(buttons, text="Clear Log", command=self._clear_log).pack(side=tk.RIGHT)
 
-        ttk.Label(main, text="Live Output:").pack(anchor="w")
+        ttk.Label(main, text="Live Output:").grid(row=4, column=0, sticky="w")
 
-        self.log_text = tk.Text(main, wrap="word", height=22)
-        self.log_text.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+        log_frame = ttk.Frame(main)
+        log_frame.grid(row=5, column=0, sticky="nsew", pady=(4, 0))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
 
-        scrollbar = ttk.Scrollbar(self.log_text, command=self.log_text.yview)
+        self.log_text = tk.Text(log_frame, wrap="word", height=22)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
     def _browse_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -134,6 +148,10 @@ class PlaylistCreatorGUI:
 
         if not self.client_secret_var.get().strip():
             messagebox.showerror("Missing Client Secret", "Please enter your Spotify Client Secret.")
+            return False
+
+        if not self.redirect_uri_var.get().strip():
+            messagebox.showerror("Missing Redirect URI", "Please enter the Spotify Redirect URI from your app settings.")
             return False
 
         try:
@@ -169,6 +187,8 @@ class PlaylistCreatorGUI:
             self.client_id_var.get().strip(),
             "--client-secret",
             self.client_secret_var.get().strip(),
+            "--redirect-uri",
+            self.redirect_uri_var.get().strip(),
             "--delay",
             self.delay_var.get().strip(),
         ]
