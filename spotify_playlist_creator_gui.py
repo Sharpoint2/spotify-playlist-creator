@@ -178,6 +178,7 @@ class PlaylistCreatorGUI:
 
         command = [
             sys.executable,
+            "-u",
             str(script_path),
             "--input",
             self.input_file_var.get().strip(),
@@ -193,8 +194,20 @@ class PlaylistCreatorGUI:
             self.delay_var.get().strip(),
         ]
 
+        redacted_command: list[str] = []
+        hide_next = False
+        secret_flags = {"--client-secret", "--client-id"}
+        for part in command:
+            if hide_next:
+                redacted_command.append("[hidden]")
+                hide_next = False
+                continue
+            redacted_command.append(part)
+            if part in secret_flags:
+                hide_next = True
+
         self._append_log("Starting playlist creation...\n")
-        self._append_log("Command: " + " ".join(command[:-2]) + " [hidden] [hidden]\n\n")
+        self._append_log("Command: " + " ".join(redacted_command) + "\n\n")
 
         self.run_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)

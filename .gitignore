@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 *.pyo
 .spotify_playlist_creator_gui.json
+.venv/
+env/
+venv/
+.cache/
+
