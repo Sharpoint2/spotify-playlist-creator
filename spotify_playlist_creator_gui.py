@@ -35,9 +35,10 @@ class PlaylistCreatorGUI:
         self.client_id_var = tk.StringVar(value="")
         self.client_secret_var = tk.StringVar(value="")
         self.redirect_uri_var = tk.StringVar(value="http://127.0.0.1:8888/callback")
-        self.delay_var = tk.StringVar(value="0.05")
+        self.delay_var = tk.StringVar(value="0.1")
         self.show_secret_var = tk.BooleanVar(value=False)
         self.save_client_id_var = tk.BooleanVar(value=False)
+        self.no_cache_var = tk.BooleanVar(value=False)
 
         self.client_secret_entry: ttk.Entry | None = None
 
@@ -103,6 +104,14 @@ class PlaylistCreatorGUI:
         ttk.Label(form, text="Delay (seconds):").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=5)
         ttk.Entry(form, textvariable=self.delay_var).grid(row=6, column=1, columnspan=2, sticky="ew", pady=5)
 
+        cache_row = ttk.Frame(form)
+        cache_row.grid(row=7, column=1, columnspan=2, sticky="w", pady=(0, 3))
+        ttk.Checkbutton(
+            cache_row,
+            text="Disable cache (--no-cache)",
+            variable=self.no_cache_var,
+        ).pack(side=tk.LEFT)
+
         buttons = ttk.Frame(main)
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 8))
 
@@ -111,6 +120,8 @@ class PlaylistCreatorGUI:
 
         self.stop_btn = ttk.Button(buttons, text="Stop", command=self._stop, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=(8, 0))
+
+        ttk.Button(buttons, text="Clear Cache", command=self._clear_cache).pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Button(buttons, text="Clear Log", command=self._clear_log).pack(side=tk.RIGHT)
 
@@ -194,6 +205,9 @@ class PlaylistCreatorGUI:
             self.delay_var.get().strip(),
         ]
 
+        if self.no_cache_var.get():
+            command.append("--no-cache")
+
         redacted_command: list[str] = []
         hide_next = False
         secret_flags = {"--client-secret", "--client-id"}
@@ -238,6 +252,29 @@ class PlaylistCreatorGUI:
                 self.output_queue.put("__PROCESS_DONE__")
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _clear_cache(self) -> None:
+        """Run the CLI --clear-cache action and report the result in the log."""
+        if self.process is not None:
+            messagebox.showwarning("Busy", "Wait for the current run to finish before clearing the cache.")
+            return
+
+        script_path = Path(__file__).with_name("create_spotify_playlist.py")
+        if not script_path.exists():
+            messagebox.showerror("Missing Script", f"Could not find: {script_path}")
+            return
+
+        self._append_log("Clearing local cache and refresh token...\n")
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script_path), "--clear-cache"],
+                capture_output=True,
+                text=True,
+            )
+            output = (result.stdout + result.stderr).strip()
+            self._append_log((output or "Done.") + "\n")
+        except Exception as exc:  # noqa: BLE001
+            self._append_log(f"Error clearing cache: {exc}\n")
 
     def _stop(self) -> None:
         if self.process is None:
